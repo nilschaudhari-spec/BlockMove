@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Undo2, RotateCcw, Check } from 'lucide-react';
+import { Undo2, RotateCcw, Check, Lightbulb, SkipForward } from 'lucide-react';
 import { cn } from './lib/utils';
+import { soundEngine } from './lib/sounds';
 
 const TUBE_CAPACITY = 4;
 
@@ -102,6 +103,49 @@ function generateValidLevel(level: number): Block[][] {
    return tubes;
 }
 
+function getHint(currentTubes: Block[][]): { from: number, to: number } | null {
+    const moves: {from: number, to: number, score: number}[] = [];
+
+    for (let from = 0; from < currentTubes.length; from++) {
+        if (currentTubes[from].length === 0) continue;
+
+        const source = currentTubes[from];
+        const topColor = source[source.length - 1].colorIndex;
+        let blocksToMove = 0;
+        for (let i = source.length - 1; i >= 0; i--) {
+            if (source[i].colorIndex === topColor) blocksToMove++;
+            else break;
+        }
+
+        const isSingleColor = blocksToMove === source.length;
+
+        for (let to = 0; to < currentTubes.length; to++) {
+            if (from === to) continue;
+            const dest = currentTubes[to];
+            
+            if (dest.length === TUBE_CAPACITY) continue;
+
+            if (dest.length === 0) {
+                if (isSingleColor) continue; 
+                moves.push({ from, to, score: 10 });
+            } else if (dest[dest.length - 1].colorIndex === topColor) {
+                const available = TUBE_CAPACITY - dest.length;
+                const moved = Math.min(blocksToMove, available);
+                
+                let score = 20;
+                if (dest.length + moved === TUBE_CAPACITY) score += 50; 
+                if (blocksToMove <= available && source.length === blocksToMove) score += 30; 
+                
+                moves.push({ from, to, score });
+            }
+        }
+    }
+
+    if (moves.length === 0) return null;
+    moves.sort((a, b) => b.score - a.score);
+    return moves[0];
+}
+
 export default function App() {
   const [levelNumber, setLevelNumber] = useState(() => {
     const saved = localStorage.getItem('blockSortLevel');
@@ -150,6 +194,7 @@ function GameBoard({ levelNumber, onWin }: { levelNumber: number, onWin: () => v
     const [history, setHistory] = useState<Block[][][]>([]);
     const [selectedTube, setSelectedTube] = useState<number | null>(null);
     const [moves, setMoves] = useState(0);
+    const [hint, setHint] = useState<{from: number, to: number} | null>(null);
     const [isComplete, setIsComplete] = useState(false);
 
     useEffect(() => {
@@ -160,13 +205,21 @@ function GameBoard({ levelNumber, onWin }: { levelNumber: number, onWin: () => v
     }, [isComplete, onWin]);
 
     const handleTubeClick = (tubeIndex: number) => {
+        setHint(null);
         if (isComplete) return;
 
+        soundEngine.init();
+
         if (selectedTube === null) {
-            if (tubes[tubeIndex].length === 0) return;
+            if (tubes[tubeIndex].length === 0) {
+                soundEngine.error();
+                return;
+            }
+            soundEngine.select();
             setSelectedTube(tubeIndex);
         } else {
             if (selectedTube === tubeIndex) {
+                soundEngine.deselect();
                 setSelectedTube(null);
                 return;
             }
@@ -175,6 +228,7 @@ function GameBoard({ levelNumber, onWin }: { levelNumber: number, onWin: () => v
             const dest = tubes[tubeIndex];
 
             if (source.length === 0) {
+                soundEngine.deselect();
                 setSelectedTube(null);
                 return;
             }
@@ -184,14 +238,17 @@ function GameBoard({ levelNumber, onWin }: { levelNumber: number, onWin: () => v
             if (dest.length > 0 && dest[dest.length - 1].colorIndex !== topBlock.colorIndex) {
                 // Change selection cleanly if we clicked another colored tube 
                 if (dest.length > 0) {
+                    soundEngine.select();
                     setSelectedTube(tubeIndex);
                 } else {
+                    soundEngine.deselect();
                     setSelectedTube(null);
                 }
                 return;
             }
 
             if (dest.length === TUBE_CAPACITY) {
+                soundEngine.select();
                 setSelectedTube(tubeIndex);
                 return;
             }
@@ -215,13 +272,25 @@ function GameBoard({ levelNumber, onWin }: { levelNumber: number, onWin: () => v
             setSelectedTube(null);
 
             if (checkWin(newTubes)) {
+                soundEngine.win();
                 setIsComplete(true);
+            } else {
+                const isTubeComplete = newTubes[tubeIndex].length === TUBE_CAPACITY && 
+                                     newTubes[tubeIndex].every(b => b.colorIndex === topBlock.colorIndex);
+                if (isTubeComplete) {
+                    soundEngine.tubeComplete();
+                } else {
+                    soundEngine.move();
+                }
             }
         }
     };
 
     const handleUndo = () => {
+        setHint(null);
         if (history.length > 0 && !isComplete) {
+          soundEngine.init();
+          soundEngine.move();
           const prev = history[history.length - 1];
           setTubes(prev);
           setHistory(history.slice(0, -1));
@@ -231,7 +300,10 @@ function GameBoard({ levelNumber, onWin }: { levelNumber: number, onWin: () => v
     };
 
     const handleReset = () => {
+        setHint(null);
         if (history.length > 0 && !isComplete) {
+          soundEngine.init();
+          soundEngine.error(); // Dull sound to indicate reset
           setTubes(initialTubes.map(t => [...t]));
           setHistory([]);
           setMoves(0);
@@ -239,8 +311,18 @@ function GameBoard({ levelNumber, onWin }: { levelNumber: number, onWin: () => v
         }
     };
 
+    const handleSkip = () => {
+        if (!isComplete) {
+            soundEngine.init();
+            soundEngine.win();
+            setIsComplete(true);
+        }
+    };
+
+    const canSkip = moves >= 10 && !isComplete;
+
     return (
-        <div className="flex-1 w-full max-w-5xl mx-auto flex flex-col relative z-10" onClick={() => setSelectedTube(null)}>
+        <div className="flex-1 w-full max-w-5xl mx-auto flex flex-col relative z-10" onClick={() => { setSelectedTube(null); soundEngine.init(); }}>
             <header className="w-full flex items-center justify-between p-6 text-zinc-100 z-10 relative">
                   <div className="flex flex-col">
                       <span className="text-sm font-semibold text-zinc-500 uppercase tracking-widest bg-zinc-800/50 rounded-full px-3 py-1 w-fit border border-zinc-700/50 mb-2">Block Sort</span>
@@ -250,6 +332,30 @@ function GameBoard({ levelNumber, onWin }: { levelNumber: number, onWin: () => v
                       </div>
                   </div>
                   <div className="flex gap-3">
+                     {canSkip && (
+                         <motion.button 
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            onClick={(e) => { e.stopPropagation(); handleSkip(); }}
+                            title="Skip Level (Available after 10 moves)"
+                            className="p-3 rounded-full bg-indigo-500/20 border border-indigo-500/50 hover:bg-indigo-500/30 transition-all shadow-sm"
+                         >
+                             <SkipForward className="w-5 h-5 text-indigo-300" />
+                         </motion.button>
+                     )}
+                     <button 
+                        onClick={(e) => { 
+                            e.stopPropagation(); 
+                            setHint(getHint(tubes)); 
+                            soundEngine.init();
+                            soundEngine.select();
+                        }}
+                        disabled={isComplete}
+                        title="Get Hint"
+                        className="p-3 rounded-full bg-zinc-800/80 border border-zinc-700 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                     >
+                         <Lightbulb className="w-5 h-5 text-yellow-400" />
+                     </button>
                      <button 
                         onClick={(e) => { e.stopPropagation(); handleUndo(); }}
                         disabled={history.length === 0 || isComplete} 
@@ -276,6 +382,8 @@ function GameBoard({ levelNumber, onWin }: { levelNumber: number, onWin: () => v
                           index={i} 
                           isSelected={selectedTube === i} 
                           onSelect={handleTubeClick} 
+                          isHintSource={hint?.from === i}
+                          isHintDest={hint?.to === i}
                       />
                    ))}
                </div>
@@ -284,7 +392,7 @@ function GameBoard({ levelNumber, onWin }: { levelNumber: number, onWin: () => v
     )
 }
 
-function Tube({ tube, index, isSelected, onSelect }: { tube: Block[], index: number, isSelected: boolean, onSelect: (i: number) => void }) {
+function Tube({ tube, index, isSelected, onSelect, isHintSource, isHintDest }: { tube: Block[], index: number, isSelected: boolean, onSelect: (i: number) => void, isHintSource?: boolean, isHintDest?: boolean }) {
    const getMovingCount = () => {
        if (!isSelected || tube.length === 0) return 0;
        const topColor = tube[tube.length - 1].colorIndex;
@@ -302,7 +410,9 @@ function Tube({ tube, index, isSelected, onSelect }: { tube: Block[], index: num
           onClick={(e) => { e.stopPropagation(); onSelect(index); }}
           className={cn(
              "relative w-14 h-[224px] rounded-b-[24px] border-x-4 border-b-4 bg-black/20 shadow-[inset_0_-10px_20px_rgba(0,0,0,0.5)] flex flex-col-reverse justify-start p-[3px] cursor-pointer transition-all duration-300",
-             isSelected ? "border-white/60 bg-white/10 shadow-white/10 translate-y-[-4px]" : "border-white/20 hover:border-white/30 hover:bg-white/5"
+             isSelected ? "border-white/60 bg-white/10 shadow-white/10 translate-y-[-4px]" : "border-white/20 hover:border-white/30 hover:bg-white/5",
+             isHintSource && "border-yellow-400/80 shadow-[0_0_20px_rgba(250,204,21,0.5)] animate-pulse",
+             isHintDest && "border-emerald-400/80 shadow-[0_0_20px_rgba(52,211,153,0.5)] animate-pulse"
           )}
        >
           {tube.map((block, i) => {
@@ -342,7 +452,11 @@ function WinModal({ level, onNext }: { level: number, onNext: () => void }) {
                 Excellent logical deduction. Ready for the next challenge?
             </p>
             <button 
-                onClick={onNext}
+                onClick={() => {
+                    soundEngine.init();
+                    soundEngine.select();
+                    onNext();
+                }}
                 className="w-full py-4 rounded-xl bg-white text-zinc-950 font-bold text-lg hover:bg-zinc-200 transition-colors shadow-lg shadow-white/10"
             >
                 Next Level
