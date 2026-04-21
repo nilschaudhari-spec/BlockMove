@@ -654,6 +654,7 @@ function Tube({ tube, index, isSelected, onSelect, isHintSource, isHintDest, isT
 
 function WinModal({ level, isDaily, isTutorial, onNext }: { level: number, isDaily: boolean, isTutorial?: boolean, onNext: () => void }) {
    useEffect(() => {
+      soundEngine.levelComplete();
       const duration = 2500;
       const end = Date.now() + duration;
 

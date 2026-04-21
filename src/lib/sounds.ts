@@ -58,6 +58,16 @@ export const soundEngine = {
       setTimeout(() => this.playTone({ freq, type: 'sine', duration: 0.5, vol: 0.08 }), i * 150);
     });
   },
+  levelComplete() {
+    this.init();
+    // A distinct fanfare/success sound (C major chord then a higher C major chord)
+    const chord1 = [261.63, 329.63, 392.00]; // C4, E4, G4
+    const chord2 = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    chord1.forEach(freq => this.playTone({ freq, type: 'triangle', duration: 0.3, vol: 0.08 }));
+    setTimeout(() => {
+        chord2.forEach(freq => this.playTone({ freq, type: 'sine', duration: 0.8, vol: 0.1 }));
+    }, 300);
+  },
   error() {
     this.init();
     this.playTone({ freq: 150, type: 'square', duration: 0.2, vol: 0.02, sweepFreq: 100 });
