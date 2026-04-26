@@ -54,9 +54,21 @@ type Block = {
   colorIndex: number;
 };
 
+function getComplexity(tubes: Block[][]) {
+    let transitions = 0;
+    for (const t of tubes) {
+        for (let i = 0; i < t.length - 1; i++) {
+            if (t[i].colorIndex !== t[i + 1].colorIndex) {
+                transitions++;
+            }
+        }
+    }
+    return transitions;
+}
+
 function generateLevel(levelNumber: number, rng: () => number = Math.random) {
-  const numColors = Math.min(LEVEL_COLORS.length, 3 + Math.floor((levelNumber - 1) / 10)); 
-  const numEmpty = levelNumber > 100 ? 3 : 2; 
+  const numColors = Math.min(LEVEL_COLORS.length, 3 + Math.floor((levelNumber - 1) / 4)); 
+  const numEmpty = levelNumber > 50 ? 3 : 2; 
   const numTubes = numColors + numEmpty;
 
   let idCounter = 0;
@@ -68,14 +80,24 @@ function generateLevel(levelNumber: number, rng: () => number = Math.random) {
       startTubes.push([]);
   }
 
-  // Shuffle intensity increases with level
-  const shuffles = Math.min(300, 30 + levelNumber * 8); 
+  // Difficulty targets
+  const targetComplexity = Math.min(numColors * 2.5, 2 + Math.floor(levelNumber * 0.8));
+  const minShuffles = Math.min(150, 20 + levelNumber * 4);
+
   const cloneState = (state: Block[][]) => state.map(t => [...t]);
   let currentTubes = cloneState(startTubes);
   
   let lastMove = { from: -1, to: -1 };
+  
+  const history = new Set<string>();
+  const hash = (tubes: Block[][]) => tubes.map(t => t.map(b => b.colorIndex).join(',')).join('|');
+  history.add(hash(currentTubes));
 
-  for (let i = 0; i < shuffles; i++) {
+  let shuffles = 0;
+  let bestTubes = currentTubes;
+  let bestComplexity = 0;
+
+  while (shuffles < 800) {
     const validMoves: { from: number, to: number }[] = [];
 
     for (let from = 0; from < numTubes; from++) {
@@ -88,9 +110,6 @@ function generateLevel(levelNumber: number, rng: () => number = Math.random) {
         for (let to = 0; to < numTubes; to++) {
           if (from === to) continue;
           if (currentTubes[to].length < TUBE_CAPACITY) {
-             if (from === lastMove.to && to === lastMove.from) {
-                continue;
-             }
              validMoves.push({ from, to });
           }
         }
@@ -99,13 +118,49 @@ function generateLevel(levelNumber: number, rng: () => number = Math.random) {
 
     if (validMoves.length === 0) break;
 
-    const move = validMoves[Math.floor(rng() * validMoves.length)];
-    const block = currentTubes[move.from].pop()!;
-    currentTubes[move.to].push(block);
-    lastMove = move;
+    const allowedMoves = validMoves.filter(m => !(m.from === lastMove.to && m.to === lastMove.from));
+    
+    const moveStates = allowedMoves.map(m => {
+        const next = cloneState(currentTubes);
+        const b = next[m.from].pop()!;
+        next[m.to].push(b);
+        return { move: m, next, hash: hash(next), comp: getComplexity(next) };
+    });
+
+    let unvisited = moveStates.filter(ms => !history.has(ms.hash));
+    if (unvisited.length === 0) {
+        unvisited = moveStates; // fallback
+        if (unvisited.length === 0) break;
+    }
+
+    // Favor moves that increase complexity
+    unvisited.sort((a, b) => {
+        const scoreA = a.comp + rng() * 1.5;
+        const scoreB = b.comp + rng() * 1.5;
+        return scoreB - scoreA;
+    });
+
+    // Pick from the top candidates to maintain randomness while drifting toward higher complexity
+    const poolSize = Math.max(1, Math.floor(unvisited.length / 2));
+    const chosen = unvisited[Math.floor(rng() * poolSize)];
+
+    currentTubes = chosen.next;
+    lastMove = chosen.move;
+    history.add(chosen.hash);
+    shuffles++;
+
+    if (chosen.comp > bestComplexity) {
+        bestComplexity = chosen.comp;
+        bestTubes = cloneState(currentTubes);
+    }
+
+    if (shuffles >= minShuffles && chosen.comp >= targetComplexity) {
+        bestTubes = cloneState(currentTubes);
+        break;
+    }
   }
 
-  return currentTubes;
+  return bestTubes;
 }
 
 function checkWin(currentTubes: Block[][]) {
@@ -201,6 +256,10 @@ export default function App() {
   
   const [isTutorialPending, setIsTutorialPending] = useState(() => localStorage.getItem('blockSortTutorialComplete') !== 'true');
   const isTutorial = isTutorialPending && levelNumber === 1 && gameMode === 'normal';
+
+  useEffect(() => {
+      localStorage.setItem('blockSortLevel', levelNumber.toString());
+  }, [levelNumber]);
 
   const [theme, setTheme] = useState<'light'|'dark'>(() => {
     return (localStorage.getItem('blockSortTheme') as 'light' | 'dark') || 'dark';
