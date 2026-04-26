@@ -812,6 +812,15 @@ function AdModal({ onComplete }: { onComplete: () => void }) {
    const [timeLeft, setTimeLeft] = useState(5);
 
    useEffect(() => {
+       try {
+           // @ts-ignore
+           (window.adsbygoogle = window.adsbygoogle || []).push({});
+       } catch (e) {
+           console.error("AdSense error", e);
+       }
+   }, []);
+
+   useEffect(() => {
        if (timeLeft > 0) {
            const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
            return () => clearTimeout(timer);
@@ -841,11 +850,17 @@ function AdModal({ onComplete }: { onComplete: () => void }) {
              </div>
 
              <div className="flex-1 w-full dark:bg-zinc-900/50 bg-zinc-50/50 flex flex-col items-center justify-center p-6 text-center">
-                 <div className="w-full max-w-[300px] h-[250px] dark:bg-zinc-800/80 bg-zinc-200/80 rounded-xl border-2 border-dashed dark:border-zinc-700 border-zinc-400 flex flex-col items-center justify-center mb-6">
-                     <span className="dark:text-zinc-500 text-zinc-500 font-semibold mb-2">Google Ad Space</span>
-                     <span className="dark:text-zinc-600 text-zinc-500 text-xs text-center px-4 leading-relaxed">
-                         (In a production environment, your Google &lt;ins className="adsbygoogle"&gt; tag gets injected here)
+                 <div className="w-full max-w-[300px] h-[250px] dark:bg-zinc-800/80 bg-zinc-200/80 rounded-xl overflow-hidden mb-6 flex items-center justify-center relative">
+                     <span className="absolute text-xs text-zinc-500 z-0 text-center px-4 mb-2">
+                         Google AdSpace<br />(Add your Client ID in index.html to show live ads)
                      </span>
+                     {/* AdSense Unit */}
+                     <ins className="adsbygoogle relative z-10 w-full h-full block"
+                          style={{ display: "block" }}
+                          data-ad-client="ca-pub-1639833678251990"
+                          data-ad-slot="5396881650"
+                          data-ad-format="auto"
+                          data-full-width-responsive="true"></ins>
                  </div>
                  
                  <h3 className="text-xl font-bold dark:text-white text-zinc-900 mb-2">Support the Developer</h3>
