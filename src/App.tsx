@@ -852,7 +852,7 @@ function AdModal({ onComplete }: { onComplete: () => void }) {
              <div className="flex-1 w-full dark:bg-zinc-900/50 bg-zinc-50/50 flex flex-col items-center justify-center p-6 text-center">
                  <div className="w-full max-w-[300px] h-[250px] dark:bg-zinc-800/80 bg-zinc-200/80 rounded-xl overflow-hidden mb-6 flex items-center justify-center relative">
                      <span className="absolute text-xs text-zinc-500 z-0 text-center px-4 mb-2">
-                         Google AdSpace<br />(Add your Client ID in index.html to show live ads)
+                         Google AdSpace
                      </span>
                      {/* AdSense Unit */}
                      <ins className="adsbygoogle relative z-10 w-full h-full block"
